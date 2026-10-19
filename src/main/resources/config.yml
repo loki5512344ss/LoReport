@@ -19,7 +19,9 @@ database:
     port: 5432
     database: "loreport"
     username: "loreport"
+    # If the password above is empty, it is read from this file (single line).
     password: "password"
+    password-file: ""
     pool-size: 10
 
 # ServGuard anticheat integration (reads the guard.violations table from the database above)

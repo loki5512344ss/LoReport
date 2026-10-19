@@ -8,6 +8,8 @@ import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -66,8 +68,23 @@ public class ConfigManager {
         return config.getString("database.postgresql.username", "lorep");
     }
     
+    /** PG password: empty {@code password} falls back to one line of {@code password-file} (network convention). */
     public String getPostgresPassword() {
-        return config.getString("database.postgresql.password", "password");
+        String direct = config.getString("database.postgresql.password", "password");
+        if (direct != null && !direct.isEmpty()) {
+            return direct;
+        }
+        String path = config.getString("database.postgresql.password-file", "");
+        if (path.isEmpty()) {
+            return "";
+        }
+        try {
+            List<String> lines = Files.readAllLines(new File(path).toPath(), StandardCharsets.UTF_8);
+            return lines.isEmpty() ? "" : lines.get(0).trim();
+        } catch (Exception e) {
+            plugin.getLogger().warning("Cannot read password-file " + path + ": " + e.getMessage());
+            return "";
+        }
     }
     
     public int getPostgresPoolSize() {
