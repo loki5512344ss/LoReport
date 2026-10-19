@@ -5,7 +5,7 @@
 # General
 console-only: "&cThis command is for players only!"
 no-permission: "&cYou don't have permission to use this command!"
-usage: "&eUsage: /report <player> <reason> [screenshot_url] | /report gui | /report stats <player> | /report image <id> <url>"
+usage: "&eUsage: /report <player> <reason> [screenshot_url] | /report gui | /report stats <player> | /report image <id> <url> | /report ac"
 
 # Reporting
 report-sent: "&aReport sent successfully!"
@@ -48,3 +48,10 @@ stats-last-online: "&eLast online: &f%time%"
 stats-report-entry: "&7- %reason% &8(%time% ago)"
 stats-recent-header: "&7Recent reports:"
 stats-more-reports: "&7... and %count% more reports"
+
+# Anticheat (ServGuard)
+anticheat-summary: "&8[&cAC&8] &7flags %hours%h: %checks%"
+anticheat-unavailable: "&eAnticheat data is not available on this server."
+anticheat-list-title: "Anticheat - Page %page%"
+anticheat-detail-title: "&8Flags: %player_name%"
+anticheat-detail-empty: "&eNo recent flags for this player."

@@ -48,6 +48,7 @@ LoReport is a modern and performant player report system for Minecraft servers. 
 | `/report <player> <reason>` | `lorep.report` | Report a player |
 | `/report gui` | `lorep.admin` | Open reports GUI |
 | `/report stats <player>` | `lorep.admin` | View player report stats |
+| `/report ac` | `lorep.admin` | Open the anticheat (ServGuard) GUI |
 | `/rep` | `lorep.report` | Alias for /report |
 
 ### Dependencies
@@ -99,6 +100,7 @@ LoReport - современная и производительная систе
 | `/report <игрок> <причина>` | `lorep.report` | Отправить репорт |
 | `/report gui` | `lorep.admin` | Открыть GUI репортов |
 | `/report stats <игрок>` | `lorep.admin` | Статистика репортов игрока |
+| `/report ac` | `lorep.admin` | GUI античита (ServGuard) |
 
 ### Зависимости
 

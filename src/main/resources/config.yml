@@ -1,6 +1,9 @@
 # Discord webhook URL for report notifications
 webhook-url: ""
 
+# Network node this server reports from; stored in reports and shown in the GUI/Discord (e.g. hub, hide, games)
+server-name: "unknown"
+
 # Database configuration
 database:
   # Database type: "sqlite" or "postgresql"
@@ -18,6 +21,17 @@ database:
     username: "loreport"
     password: "password"
     pool-size: 10
+
+# ServGuard anticheat integration (reads the guard.violations table from the database above)
+anticheat:
+  # Append an anticheat flag summary to new report reasons
+  enabled: true
+  # Hours of violation history to consider
+  lookback-hours: 72
+  # Maximum distinct checks listed in the report summary
+  summary-max-checks: 5
+  # Maximum total flags represented in the report summary
+  summary-max-flags: 50
 
 # GUI settings
 gui:
@@ -70,6 +84,7 @@ gui:
         - "&eReason: &f%reason%"
         - "&eTime: &f%time%"
         - "&eStatus: &f%status%"
+        - "&eServer: &f%server%"
         - "&7"
         - "&eReports: &c%report_count%"
       slots: []
@@ -116,6 +131,51 @@ gui:
       lore: []
       slots: []
       glowing: false
+    anticheat-tab:
+      material: REDSTONE
+      custom-model-data: -1
+      name: "&cAnticheat"
+      lore: []
+      slots: [46]
+      glowing: false
+    anticheat-entry:
+      material: PLAYER_HEAD
+      custom-model-data: -1
+      name: "&c%player_name%"
+      lore:
+        - "&7"
+        - "&eFlags (%hours%h): &c%flag_count%"
+        - "&eLast flag: &f%last_flag%"
+        - "&7"
+        - "&eReports: &c%report_count%"
+      slots: []
+      glowing: false
+    anticheat-detail:
+      material: PLAYER_HEAD
+      custom-model-data: -1
+      name: "&c%player_name%"
+      lore:
+        - "&7"
+        - "&eReports: &c%report_count%"
+        - "&7Recent flags (%hours%h):"
+        - "&8- &f%check% &7(%server%, %time%) &8%detail%"
+      slots: []
+      glowing: false
+    anticheat-reports:
+      material: BOOK
+      custom-model-data: -1
+      name: "&eOpen reports"
+      lore: []
+      slots: [49]
+      glowing: false
+    anticheat-page-info:
+      material: PAPER
+      custom-model-data: -1
+      name: "&ePage %page% of %total%"
+      lore:
+        - "&7Flagged players: %total_players%"
+      slots: [49]
+      glowing: false
 
 # Limits
 limits:
@@ -142,7 +202,7 @@ messages:
   self-report: "&cYou cannot report yourself!"
   player-not-found: "&cPlayer not found!"
   no-permission: "&cYou don't have permission!"
-  usage: "&eUsage: /report <player> <reason> [screenshot_url] | /report gui | /report stats <player> | /report image <id> <url>"
+  usage: "&eUsage: /report <player> <reason> [screenshot_url] | /report gui | /report stats <player> | /report image <id> <url> | /report ac"
   no-reports: "&eThis player has no reports."
   stats-header: "&6=== Report stats: %player% ==="
   stats-count: "&eTotal reports: &f%count%"

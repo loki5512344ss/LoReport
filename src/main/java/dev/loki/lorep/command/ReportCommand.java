@@ -2,6 +2,7 @@ package dev.loki.lorep.command;
 
 import dev.loki.lorep.LorepPlugin;
 import dev.loki.lorep.database.Report;
+import dev.loki.lorep.gui.AnticheatGui;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
@@ -13,9 +14,12 @@ import org.bukkit.entity.Player;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 public class ReportCommand implements CommandExecutor, TabCompleter {
+
+    private static final int MAX_REASON_LENGTH = 500;
 
     private final LorepPlugin plugin;
 
@@ -47,6 +51,10 @@ public class ReportCommand implements CommandExecutor, TabCompleter {
             return handleReportImage(player, args[1], args[2]);
         }
 
+        if (args[0].equalsIgnoreCase("ac")) {
+            return handleAnticheat(player);
+        }
+
         if (!player.hasPermission("lorep.report")) {
             player.sendMessage(plugin.getConfigManager().getMessage("no-permission"));
             return true;
@@ -70,11 +78,6 @@ public class ReportCommand implements CommandExecutor, TabCompleter {
 
         if (reason.trim().isEmpty()) {
             player.sendMessage(plugin.getConfigManager().getMessage("usage"));
-            return true;
-        }
-
-        if (reason.length() > 500) {
-            player.sendMessage(plugin.getConfigManager().getMessage("reason-too-long", "%max%", "500"));
             return true;
         }
 
@@ -104,13 +107,23 @@ public class ReportCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
+        // Validate the final reason (player text plus anticheat summary); the summary
+        // is truncated first so the player's own text is never cut.
+        String finalReason = appendAnticheatSummary(target.getUniqueId(), reason);
+        if (finalReason.length() > MAX_REASON_LENGTH) {
+            reporter.sendMessage(plugin.getConfigManager().getMessage("reason-too-long",
+                "%max%", String.valueOf(MAX_REASON_LENGTH)));
+            return true;
+        }
+
         Report report = new Report(
             reporter.getUniqueId(),
             reporter.getName(),
             target.getUniqueId(),
             target.getName() != null ? target.getName() : targetName,
-            reason,
-            imageUrl
+            finalReason,
+            imageUrl,
+            plugin.getConfigManager().getServerName()
         );
 
         plugin.getDatabaseManager().saveReport(report);
@@ -121,6 +134,26 @@ public class ReportCommand implements CommandExecutor, TabCompleter {
 
         reporter.sendMessage(plugin.getConfigManager().getMessage("report-sent"));
         return true;
+    }
+
+    /**
+     * Appends the ServGuard anticheat summary to the player's reason, truncating
+     * the summary so the combined text stays within the reason length limit.
+     */
+    private String appendAnticheatSummary(UUID targetUuid, String reason) {
+        String summary = plugin.getAnticheatService().buildSummary(targetUuid);
+        if (summary.isEmpty()) {
+            return reason;
+        }
+
+        int budget = MAX_REASON_LENGTH - reason.length();
+        if (budget <= 0) {
+            return reason;
+        }
+        if (summary.length() > budget) {
+            summary = summary.substring(0, budget);
+        }
+        return reason + " " + summary;
     }
 
     private boolean handleReportImage(Player player, String idStr, String imageUrl) {
@@ -154,7 +187,8 @@ public class ReportCommand implements CommandExecutor, TabCompleter {
             report.reason(),
             imageUrl,
             report.status(),
-            report.createdAt()
+            report.createdAt(),
+            report.serverName()
         );
 
         if (plugin.getDiscordWebhook() != null) {
@@ -172,6 +206,16 @@ public class ReportCommand implements CommandExecutor, TabCompleter {
         }
 
         new dev.loki.lorep.gui.ReportGui(plugin, 0).open(player);
+        return true;
+    }
+
+    private boolean handleAnticheat(Player player) {
+        if (!player.hasPermission("lorep.admin")) {
+            player.sendMessage(plugin.getConfigManager().getMessage("no-permission"));
+            return true;
+        }
+
+        new AnticheatGui(plugin, 0).open(player);
         return true;
     }
 
@@ -196,6 +240,9 @@ public class ReportCommand implements CommandExecutor, TabCompleter {
                 }
                 if ("image".startsWith(input)) {
                     completions.add("image");
+                }
+                if ("ac".startsWith(input)) {
+                    completions.add("ac");
                 }
             }
 

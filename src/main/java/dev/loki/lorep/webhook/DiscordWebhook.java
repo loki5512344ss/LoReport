@@ -125,7 +125,7 @@ public class DiscordWebhook {
 
         JsonObject reasonField = new JsonObject();
         reasonField.addProperty("name", "\uD83D\uDCCB Причина");
-        reasonField.addProperty("value", report.reason());
+        reasonField.addProperty("value", stripLegacyColors(report.reason()));
         reasonField.addProperty("inline", false);
         fields.add(reasonField);
 
@@ -140,6 +140,12 @@ public class DiscordWebhook {
         timeField.addProperty("value", FORMATTER.format(report.createdAt()));
         timeField.addProperty("inline", true);
         fields.add(timeField);
+
+        JsonObject serverField = new JsonObject();
+        serverField.addProperty("name", "\uD83D\uDDA5 \u0421\u0435\u0440\u0432\u0435\u0440");
+        serverField.addProperty("value", report.serverName() != null ? report.serverName() : "unknown");
+        serverField.addProperty("inline", true);
+        fields.add(serverField);
 
         embed.add("fields", fields);
 
@@ -220,6 +226,26 @@ public class DiscordWebhook {
             case "DISMISSED" -> "\u274C Отклонён";
             default -> "\u2753 Неизвестно";
         };
+    }
+
+    /**
+     * Strips legacy paragraph-sign color codes so colorized GUI-only text (for
+     * example the appended anticheat summary) stays readable in Discord embeds.
+     */
+    private static String stripLegacyColors(String text) {
+        if (text == null) {
+            return "";
+        }
+        StringBuilder stripped = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '§' && i + 1 < text.length()) {
+                i++; // skip the color code character itself
+                continue;
+            }
+            stripped.append(c);
+        }
+        return stripped.toString();
     }
 
     private String escapeJson(String text) {

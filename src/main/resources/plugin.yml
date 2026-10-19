@@ -2,6 +2,7 @@ name: Loreport
 version: ${version}
 main: dev.loki.lorep.LorepPlugin
 api-version: '1.19'
+folia-supported: true
 author: loki5512344
 description: Modern player report system with Discord integration and GUI
 website: https://codeberg.org/loki5512344/Loreport
@@ -9,7 +10,7 @@ website: https://codeberg.org/loki5512344/Loreport
 commands:
   report:
     description: Report a player or manage reports
-    usage: /report <player> <reason> [image_url] | /report gui | /report stats <player> | /report image <id> <url>
+    usage: /report <player> <reason> [image_url] | /report gui | /report stats <player> | /report image <id> <url> | /report ac
     permission: lorep.report
     aliases: [rep, reports]
 
@@ -18,7 +19,7 @@ permissions:
     description: Allows players to report other players
     default: true
   lorep.admin:
-    description: Allows access to admin commands (gui, stats)
+    description: Allows access to admin commands (gui, stats, image, ac)
     default: op
   lorep.*:
     description: Gives access to all Loreport permissions

@@ -8,6 +8,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -81,12 +82,15 @@ public class PostgreSQLDatabaseManager implements DatabaseManager {
         
         String createTargetIndex = "CREATE INDEX IF NOT EXISTS idx_target_uuid ON reports(target_uuid)";
         String createReporterTargetIndex = "CREATE INDEX IF NOT EXISTS idx_reporter_target ON reports(reporter_uuid, target_uuid)";
+        // Server attribution column for reports created on this network node
+        String addServerName = "ALTER TABLE reports ADD COLUMN IF NOT EXISTS server_name TEXT";
         
         try (Connection conn = dataSource.getConnection();
              Statement stmt = conn.createStatement()) {
             stmt.execute(createTable);
             stmt.execute(createTargetIndex);
             stmt.execute(createReporterTargetIndex);
+            stmt.execute(addServerName);
         }
     }
 
@@ -101,7 +105,7 @@ public class PostgreSQLDatabaseManager implements DatabaseManager {
     @Override
     public void saveReport(Report report) {
         String sql = "INSERT INTO reports (reporter_uuid, reporter_name, target_uuid, "
-            + "target_name, reason, image_url, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+            + "target_name, reason, image_url, status, created_at, server_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -117,6 +121,7 @@ public class PostgreSQLDatabaseManager implements DatabaseManager {
             }
             stmt.setString(7, report.status());
             stmt.setLong(8, report.createdAt().toEpochMilli());
+            stmt.setString(9, report.serverName() != null ? report.serverName() : Report.UNKNOWN_SERVER);
             stmt.executeUpdate();
         } catch (SQLException e) {
             logger.log(Level.SEVERE, "Failed to save report", e);
@@ -243,6 +248,10 @@ public class PostgreSQLDatabaseManager implements DatabaseManager {
         if (rs.wasNull()) {
             imageUrl = null;
         }
+        String serverName = rs.getString("server_name");
+        if (rs.wasNull()) {
+            serverName = Report.UNKNOWN_SERVER;
+        }
         return new Report(
             rs.getInt("id"),
             UUID.fromString(rs.getString("reporter_uuid")),
@@ -252,7 +261,8 @@ public class PostgreSQLDatabaseManager implements DatabaseManager {
             rs.getString("reason"),
             imageUrl,
             rs.getString("status"),
-            Instant.ofEpochMilli(rs.getLong("created_at"))
+            Instant.ofEpochMilli(rs.getLong("created_at")),
+            serverName
         );
     }
 
@@ -305,5 +315,126 @@ public class PostgreSQLDatabaseManager implements DatabaseManager {
         }
 
         return null;
+    }
+
+    @Override
+    public boolean isAnticheatAvailable() {
+        String sql = "SELECT to_regclass('guard.violations')";
+
+        try (Connection conn = dataSource.getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            return rs.next() && rs.getString(1) != null;
+        } catch (SQLException e) {
+            logger.log(Level.WARNING, "Failed to probe anticheat table", e);
+            return false;
+        }
+    }
+
+    @Override
+    public List<CheckCount> getTopCheckCounts(UUID playerUuid, int lookbackHours, int limit) {
+        String sql = "SELECT check_key, COUNT(*) AS cnt FROM guard.violations "
+            + "WHERE player_uuid = ? AND created_at > NOW() - (? * INTERVAL '1 hour') "
+            + "GROUP BY check_key ORDER BY cnt DESC LIMIT ?";
+        List<CheckCount> counts = new ArrayList<>();
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, playerUuid.toString());
+            stmt.setInt(2, lookbackHours);
+            stmt.setInt(3, limit);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    counts.add(new CheckCount(rs.getString("check_key"), rs.getInt("cnt")));
+                }
+            }
+        } catch (SQLException e) {
+            logger.log(Level.SEVERE, "Failed to get anticheat check counts", e);
+        }
+
+        return counts;
+    }
+
+    @Override
+    public int getFlaggedPlayerCount(int lookbackHours) {
+        String sql = "SELECT COUNT(*) FROM (SELECT player_uuid FROM guard.violations "
+            + "WHERE created_at > NOW() - (? * INTERVAL '1 hour') GROUP BY player_uuid) AS flagged";
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setInt(1, lookbackHours);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt(1);
+                }
+            }
+        } catch (SQLException e) {
+            logger.log(Level.SEVERE, "Failed to count flagged players", e);
+        }
+
+        return 0;
+    }
+
+    @Override
+    public List<FlaggedPlayer> getFlaggedPlayers(int lookbackHours, int limit, int offset) {
+        String sql = "SELECT player_uuid, player_name, COUNT(*) AS cnt, MAX(created_at) AS last_at "
+            + "FROM guard.violations WHERE created_at > NOW() - (? * INTERVAL '1 hour') "
+            + "GROUP BY player_uuid, player_name ORDER BY cnt DESC, last_at DESC LIMIT ? OFFSET ?";
+        List<FlaggedPlayer> players = new ArrayList<>();
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setInt(1, lookbackHours);
+            stmt.setInt(2, limit);
+            stmt.setInt(3, offset);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    players.add(new FlaggedPlayer(
+                        UUID.fromString(rs.getString("player_uuid")),
+                        rs.getString("player_name"),
+                        rs.getInt("cnt"),
+                        toInstant(rs.getTimestamp("last_at"))
+                    ));
+                }
+            }
+        } catch (SQLException e) {
+            logger.log(Level.SEVERE, "Failed to get flagged players", e);
+        }
+
+        return players;
+    }
+
+    @Override
+    public List<ViolationEntry> getRecentViolations(UUID playerUuid, int lookbackHours, int limit) {
+        String sql = "SELECT check_key, detail, server, weight, created_at FROM guard.violations "
+            + "WHERE player_uuid = ? AND created_at > NOW() - (? * INTERVAL '1 hour') "
+            + "ORDER BY created_at DESC LIMIT ?";
+        List<ViolationEntry> violations = new ArrayList<>();
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, playerUuid.toString());
+            stmt.setInt(2, lookbackHours);
+            stmt.setInt(3, limit);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    violations.add(new ViolationEntry(
+                        rs.getString("check_key"),
+                        rs.getString("detail"),
+                        rs.getString("server"),
+                        rs.getDouble("weight"),
+                        toInstant(rs.getTimestamp("created_at"))
+                    ));
+                }
+            }
+        } catch (SQLException e) {
+            logger.log(Level.SEVERE, "Failed to get recent anticheat violations", e);
+        }
+
+        return violations;
+    }
+
+    private static Instant toInstant(Timestamp timestamp) {
+        return timestamp != null ? timestamp.toInstant() : Instant.EPOCH;
     }
 }

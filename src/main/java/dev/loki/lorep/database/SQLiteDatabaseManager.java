@@ -7,6 +7,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -14,6 +15,10 @@ import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+/**
+ * SQLite-backed database. All methods are synchronized on this instance because
+ * Folia region threads may invoke them concurrently.
+ */
 public class SQLiteDatabaseManager implements DatabaseManager {
     
     private final File dataFolder;
@@ -28,7 +33,7 @@ public class SQLiteDatabaseManager implements DatabaseManager {
     }
     
     @Override
-    public void initialize() {
+    public synchronized void initialize() {
         try {
             if (!dataFolder.exists()) {
                 dataFolder.mkdirs();
@@ -68,10 +73,31 @@ public class SQLiteDatabaseManager implements DatabaseManager {
             stmt.execute(createTargetIndex);
             stmt.execute(createReporterTargetIndex);
         }
+        
+        addServerNameColumn();
+    }
+
+    /**
+     * SQLite has no ALTER TABLE ... ADD COLUMN IF NOT EXISTS, so the column
+     * presence is checked via PRAGMA before altering the table.
+     */
+    private void addServerNameColumn() throws SQLException {
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery("PRAGMA table_info(reports)")) {
+            while (rs.next()) {
+                if ("server_name".equalsIgnoreCase(rs.getString("name"))) {
+                    return;
+                }
+            }
+        }
+
+        try (Statement stmt = connection.createStatement()) {
+            stmt.execute("ALTER TABLE reports ADD COLUMN server_name TEXT");
+        }
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
         try {
             if (connection != null && !connection.isClosed()) {
                 connection.close();
@@ -83,9 +109,9 @@ public class SQLiteDatabaseManager implements DatabaseManager {
     }
     
     @Override
-    public void saveReport(Report report) {
+    public synchronized void saveReport(Report report) {
         String sql = "INSERT INTO reports (reporter_uuid, reporter_name, target_uuid, "
-            + "target_name, reason, image_url, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+            + "target_name, reason, image_url, status, created_at, server_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             stmt.setString(1, report.reporterUuid().toString());
@@ -100,6 +126,7 @@ public class SQLiteDatabaseManager implements DatabaseManager {
             }
             stmt.setString(7, report.status());
             stmt.setLong(8, report.createdAt().toEpochMilli());
+            stmt.setString(9, report.serverName() != null ? report.serverName() : Report.UNKNOWN_SERVER);
             stmt.executeUpdate();
         } catch (SQLException e) {
             logger.log(Level.SEVERE, "Failed to save report", e);
@@ -107,7 +134,7 @@ public class SQLiteDatabaseManager implements DatabaseManager {
     }
     
     @Override
-    public List<Report> getReportsForTarget(UUID targetUuid) {
+    public synchronized List<Report> getReportsForTarget(UUID targetUuid) {
         String sql = "SELECT * FROM reports WHERE target_uuid = ? ORDER BY created_at DESC";
         List<Report> reports = new ArrayList<>();
 
@@ -126,7 +153,7 @@ public class SQLiteDatabaseManager implements DatabaseManager {
     }
     
     @Override
-    public List<Report> getAllReports() {
+    public synchronized List<Report> getAllReports() {
         String sql = "SELECT * FROM reports ORDER BY created_at DESC";
         List<Report> reports = new ArrayList<>();
 
@@ -143,7 +170,7 @@ public class SQLiteDatabaseManager implements DatabaseManager {
     }
     
     @Override
-    public int getReportCount(UUID targetUuid) {
+    public synchronized int getReportCount(UUID targetUuid) {
         String sql = "SELECT COUNT(*) FROM reports WHERE target_uuid = ?";
 
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
@@ -161,7 +188,7 @@ public class SQLiteDatabaseManager implements DatabaseManager {
     }
     
     @Override
-    public boolean hasReported(UUID reporterUuid, UUID targetUuid) {
+    public synchronized boolean hasReported(UUID reporterUuid, UUID targetUuid) {
         String sql = "SELECT COUNT(*) FROM reports WHERE reporter_uuid = ? AND target_uuid = ?";
 
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
@@ -180,7 +207,7 @@ public class SQLiteDatabaseManager implements DatabaseManager {
     }
     
     @Override
-    public List<Report> getReportsPaginated(int page, int pageSize) {
+    public synchronized List<Report> getReportsPaginated(int page, int pageSize) {
         String sql = "SELECT * FROM reports ORDER BY created_at DESC LIMIT ? OFFSET ?";
         List<Report> reports = new ArrayList<>();
 
@@ -200,7 +227,7 @@ public class SQLiteDatabaseManager implements DatabaseManager {
     }
     
     @Override
-    public int getTotalReportCount() {
+    public synchronized int getTotalReportCount() {
         String sql = "SELECT COUNT(*) FROM reports";
 
         try (PreparedStatement stmt = connection.prepareStatement(sql);
@@ -220,6 +247,10 @@ public class SQLiteDatabaseManager implements DatabaseManager {
         if (rs.wasNull()) {
             imageUrl = null;
         }
+        String serverName = rs.getString("server_name");
+        if (rs.wasNull()) {
+            serverName = Report.UNKNOWN_SERVER;
+        }
         return new Report(
             rs.getInt("id"),
             UUID.fromString(rs.getString("reporter_uuid")),
@@ -229,12 +260,13 @@ public class SQLiteDatabaseManager implements DatabaseManager {
             rs.getString("reason"),
             imageUrl,
             rs.getString("status"),
-            Instant.ofEpochMilli(rs.getLong("created_at"))
+            Instant.ofEpochMilli(rs.getLong("created_at")),
+            serverName
         );
     }
 
     @Override
-    public void updateReportStatus(int reportId, String status) {
+    public synchronized void updateReportStatus(int reportId, String status) {
         String sql = "UPDATE reports SET status = ? WHERE id = ?";
 
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
@@ -247,7 +279,7 @@ public class SQLiteDatabaseManager implements DatabaseManager {
     }
 
     @Override
-    public void updateReportImage(int reportId, String imageUrl) {
+    public synchronized void updateReportImage(int reportId, String imageUrl) {
         String sql = "UPDATE reports SET image_url = ? WHERE id = ?";
 
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
@@ -264,7 +296,7 @@ public class SQLiteDatabaseManager implements DatabaseManager {
     }
 
     @Override
-    public Report getReportById(int id) {
+    public synchronized Report getReportById(int id) {
         String sql = "SELECT * FROM reports WHERE id = ?";
 
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
@@ -279,5 +311,127 @@ public class SQLiteDatabaseManager implements DatabaseManager {
         }
 
         return null;
+    }
+
+    @Override
+    public synchronized boolean isAnticheatAvailable() {
+        // ServGuard persists violations to PostgreSQL; guard.violations normally
+        // does not exist here, the probe fails and the feature disables itself.
+        String sql = "SELECT 1 FROM guard.violations LIMIT 1";
+
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            return rs.next();
+        } catch (SQLException e) {
+            logger.log(Level.FINE, "Anticheat table not available in SQLite database", e);
+            return false;
+        }
+    }
+
+    @Override
+    public synchronized List<CheckCount> getTopCheckCounts(UUID playerUuid, int lookbackHours, int limit) {
+        String sql = "SELECT check_key, COUNT(*) AS cnt FROM guard.violations "
+            + "WHERE player_uuid = ? AND created_at > datetime('now', ?) "
+            + "GROUP BY check_key ORDER BY cnt DESC LIMIT ?";
+        List<CheckCount> counts = new ArrayList<>();
+
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, playerUuid.toString());
+            stmt.setString(2, hoursClause(lookbackHours));
+            stmt.setInt(3, limit);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    counts.add(new CheckCount(rs.getString("check_key"), rs.getInt("cnt")));
+                }
+            }
+        } catch (SQLException e) {
+            logger.log(Level.SEVERE, "Failed to get anticheat check counts", e);
+        }
+
+        return counts;
+    }
+
+    @Override
+    public synchronized int getFlaggedPlayerCount(int lookbackHours) {
+        String sql = "SELECT COUNT(*) FROM (SELECT player_uuid FROM guard.violations "
+            + "WHERE created_at > datetime('now', ?) GROUP BY player_uuid) AS flagged";
+
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, hoursClause(lookbackHours));
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt(1);
+                }
+            }
+        } catch (SQLException e) {
+            logger.log(Level.SEVERE, "Failed to count flagged players", e);
+        }
+
+        return 0;
+    }
+
+    @Override
+    public synchronized List<FlaggedPlayer> getFlaggedPlayers(int lookbackHours, int limit, int offset) {
+        String sql = "SELECT player_uuid, player_name, COUNT(*) AS cnt, MAX(created_at) AS last_at "
+            + "FROM guard.violations WHERE created_at > datetime('now', ?) "
+            + "GROUP BY player_uuid, player_name ORDER BY cnt DESC, last_at DESC LIMIT ? OFFSET ?";
+        List<FlaggedPlayer> players = new ArrayList<>();
+
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, hoursClause(lookbackHours));
+            stmt.setInt(2, limit);
+            stmt.setInt(3, offset);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    players.add(new FlaggedPlayer(
+                        UUID.fromString(rs.getString("player_uuid")),
+                        rs.getString("player_name"),
+                        rs.getInt("cnt"),
+                        toInstant(rs.getTimestamp("last_at"))
+                    ));
+                }
+            }
+        } catch (SQLException e) {
+            logger.log(Level.SEVERE, "Failed to get flagged players", e);
+        }
+
+        return players;
+    }
+
+    @Override
+    public synchronized List<ViolationEntry> getRecentViolations(UUID playerUuid, int lookbackHours, int limit) {
+        String sql = "SELECT check_key, detail, server, weight, created_at FROM guard.violations "
+            + "WHERE player_uuid = ? AND created_at > datetime('now', ?) "
+            + "ORDER BY created_at DESC LIMIT ?";
+        List<ViolationEntry> violations = new ArrayList<>();
+
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, playerUuid.toString());
+            stmt.setString(2, hoursClause(lookbackHours));
+            stmt.setInt(3, limit);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    violations.add(new ViolationEntry(
+                        rs.getString("check_key"),
+                        rs.getString("detail"),
+                        rs.getString("server"),
+                        rs.getDouble("weight"),
+                        toInstant(rs.getTimestamp("created_at"))
+                    ));
+                }
+            }
+        } catch (SQLException e) {
+            logger.log(Level.SEVERE, "Failed to get recent anticheat violations", e);
+        }
+
+        return violations;
+    }
+
+    private static String hoursClause(int lookbackHours) {
+        return "-" + lookbackHours + " hours";
+    }
+
+    private static Instant toInstant(Timestamp timestamp) {
+        return timestamp != null ? timestamp.toInstant() : Instant.EPOCH;
     }
 }

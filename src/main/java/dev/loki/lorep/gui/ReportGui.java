@@ -11,7 +11,6 @@ import org.bukkit.OfflinePlayer;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
-import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -22,7 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class ReportGui implements InventoryHolder {
+public class ReportGui implements ActionInventory {
 
     public static final int INVENTORY_SIZE = 54;
 
@@ -315,6 +314,7 @@ public class ReportGui implements InventoryHolder {
             .replace("%reason%", report.reason() != null ? report.reason() : "")
             .replace("%time%", TimeUtil.formatTimeAgo(report.createdAt()))
             .replace("%status%", statusDisplay)
+            .replace("%server%", report.serverName() != null ? report.serverName() : Report.UNKNOWN_SERVER)
             .replace("%report_count%", String.valueOf(reportCount));
     }
 
@@ -347,6 +347,23 @@ public class ReportGui implements InventoryHolder {
 
     public Report getCurrentReport() {
         return currentReport;
+    }
+
+    @Override
+    public Map<Integer, String> slotActions() {
+        return slotActions;
+    }
+
+    @Override
+    public void openPage(Player player, int page) {
+        new ReportGui(plugin, page).open(player);
+    }
+
+    @Override
+    public int getTotalPages() {
+        int pageSize = plugin.getConfig().getInt("gui.reports-per-page", 45);
+        int totalReports = plugin.getDatabaseManager().getTotalReportCount();
+        return PaginationUtil.calculateTotalPages(totalReports, pageSize);
     }
 
     @Override

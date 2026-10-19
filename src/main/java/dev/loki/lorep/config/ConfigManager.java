@@ -74,6 +74,26 @@ public class ConfigManager {
         return config.getInt("database.postgresql.pool-size", 10);
     }
     
+    public String getServerName() {
+        return config.getString("server-name", "unknown");
+    }
+    
+    public boolean isAnticheatEnabled() {
+        return config.getBoolean("anticheat.enabled", true);
+    }
+    
+    public int getAnticheatLookbackHours() {
+        return config.getInt("anticheat.lookback-hours", 72);
+    }
+    
+    public int getAnticheatSummaryMaxChecks() {
+        return config.getInt("anticheat.summary-max-checks", 5);
+    }
+    
+    public int getAnticheatSummaryMaxFlags() {
+        return config.getInt("anticheat.summary-max-flags", 50);
+    }
+    
     public String getMessage(String key) {
         String message = messages.getString(key);
         if (message == null) {

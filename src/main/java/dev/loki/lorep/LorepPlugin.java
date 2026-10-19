@@ -1,5 +1,6 @@
 package dev.loki.lorep;
 
+import dev.loki.lorep.anticheat.AnticheatService;
 import dev.loki.lorep.command.ReportCommand;
 import dev.loki.lorep.config.ConfigManager;
 import dev.loki.lorep.database.DatabaseManager;
@@ -15,6 +16,7 @@ public final class LorepPlugin extends JavaPlugin {
     private ConfigManager configManager;
     private DatabaseManager databaseManager;
     private DiscordWebhook discordWebhook;
+    private AnticheatService anticheatService;
     
     @Override
     public void onEnable() {
@@ -26,6 +28,9 @@ public final class LorepPlugin extends JavaPlugin {
         
         // Initialize database
         initializeDatabase();
+        
+        // Initialize ServGuard anticheat integration
+        anticheatService = new AnticheatService(databaseManager, configManager, getLogger());
         
         // Initialize webhook
         String webhookUrl = configManager.getWebhookUrl();
@@ -95,6 +100,10 @@ public final class LorepPlugin extends JavaPlugin {
     
     public DiscordWebhook getDiscordWebhook() {
         return discordWebhook;
+    }
+    
+    public AnticheatService getAnticheatService() {
+        return anticheatService;
     }
     
     public void setConfigManager(ConfigManager configManager) {

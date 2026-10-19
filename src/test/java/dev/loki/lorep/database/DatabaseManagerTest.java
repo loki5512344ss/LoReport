@@ -121,7 +121,8 @@ public class DatabaseManagerTest {
         String targetName = "Target_" + targetUuid.toString().substring(0, 8);
         Instant createdAt = Instant.now();
         
-        Report original = new Report(0, reporterUuid, reporterName, targetUuid, targetName, reason, null, "PENDING", createdAt);
+        Report original = new Report(0, reporterUuid, reporterName, targetUuid, targetName, reason, null, "PENDING", createdAt,
+            Report.UNKNOWN_SERVER);
         dbManager.saveReport(original);
         
         // Close and reopen database
@@ -154,7 +155,7 @@ public class DatabaseManagerTest {
             Instant reportTime = Instant.now().minusSeconds(count - i);
             Report report = new Report(
                 0, UUID.randomUUID(), "Reporter" + i, targetUuid, "Target",
-                "Reason " + i, null, "PENDING", reportTime
+                "Reason " + i, null, "PENDING", reportTime, Report.UNKNOWN_SERVER
             );
             dbManager.saveReport(report);
         }
@@ -219,5 +220,36 @@ public class DatabaseManagerTest {
         assertEquals(0, dbManager.getReportCount(randomUuid));
         assertTrue(dbManager.getReportsForTarget(randomUuid).isEmpty());
         assertFalse(dbManager.hasReported(randomUuid, UUID.randomUUID()));
+    }
+
+    /**
+     * **Property: Server Attribution Persistence**
+     * A report saved with a known server name SHALL be retrievable with the same
+     * server name; reports created without one SHALL default to "unknown".
+     */
+    @Test
+    void serverNameRoundTrip() {
+        UUID targetUuid = UUID.randomUUID();
+        Report report = new Report(UUID.randomUUID(), "Reporter", targetUuid, "Target", "Test reason", null, "games");
+        dbManager.saveReport(report);
+
+        List<Report> loaded = dbManager.getReportsForTarget(targetUuid);
+        assertEquals(1, loaded.size());
+        assertEquals("games", loaded.get(0).serverName());
+
+        UUID defaultTarget = UUID.randomUUID();
+        dbManager.saveReport(new Report(UUID.randomUUID(), "Reporter", defaultTarget, "Target", "Test reason"));
+        assertEquals(Report.UNKNOWN_SERVER, dbManager.getReportsForTarget(defaultTarget).get(0).serverName());
+    }
+
+    /**
+     * **Property: Anticheat Probe Safety**
+     * A plain SQLite database has no guard.violations table, so the anticheat
+     * availability probe SHALL report false instead of throwing.
+     */
+    @Test
+    void anticheatTableUnavailableOnSqlite() {
+        assertFalse(dbManager.isAnticheatAvailable(),
+            "guard.violations should not exist in a plain SQLite database");
     }
 }
