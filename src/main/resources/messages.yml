@@ -39,6 +39,22 @@ teleported-to: "&aTeleported to %player%"
 player-offline: "&cPlayer %player% is offline"
 screenshot-link: "&aScreenshot: &e%url%"
 
+# GUI fallback entries (used when gui.items.<name> is not configured)
+report-entry-name: "&c%target_name%"
+report-entry-reporter: "&eBy: &f%reporter_name%"
+report-entry-reason: "&eReason: &f%reason%"
+report-entry-time: "&eTime: &f%time%"
+report-entry-status: "&eStatus: &f%status%"
+report-entry-server: "&eServer: &f%server%"
+report-entry-reports: "&eReports: &c%report_count%"
+anticheat-entry-name: "&c%player_name%"
+anticheat-entry-flags: "&eFlags (%hours%h): &c%flag_count%"
+anticheat-entry-last-flag: "&eLast flag: &f%last_flag%"
+anticheat-entry-reports: "&eReports: &c%report_count%"
+anticheat-detail-name: "&c%player_name%"
+anticheat-detail-reports: "&eReports: &c%report_count%"
+anticheat-detail-flag: "&8- &f%check% &7(%server%, %time%) &8%detail%"
+
 # Stats
 online-status: "&aOnline now"
 no-reports: "&eThis player has no reports."

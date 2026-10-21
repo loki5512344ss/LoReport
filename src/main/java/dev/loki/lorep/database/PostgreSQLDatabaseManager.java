@@ -340,7 +340,7 @@ public class PostgreSQLDatabaseManager implements DatabaseManager {
 
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, playerUuid.toString());
+            stmt.setObject(1, playerUuid);
             stmt.setInt(2, lookbackHours);
             stmt.setInt(3, limit);
             try (ResultSet rs = stmt.executeQuery()) {
@@ -389,8 +389,12 @@ public class PostgreSQLDatabaseManager implements DatabaseManager {
             stmt.setInt(3, offset);
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
+                    UUID playerUuid = parsePlayerUuid(rs.getString("player_uuid"));
+                    if (playerUuid == null) {
+                        continue;
+                    }
                     players.add(new FlaggedPlayer(
-                        UUID.fromString(rs.getString("player_uuid")),
+                        playerUuid,
                         rs.getString("player_name"),
                         rs.getInt("cnt"),
                         toInstant(rs.getTimestamp("last_at"))
@@ -413,7 +417,7 @@ public class PostgreSQLDatabaseManager implements DatabaseManager {
 
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, playerUuid.toString());
+            stmt.setObject(1, playerUuid);
             stmt.setInt(2, lookbackHours);
             stmt.setInt(3, limit);
             try (ResultSet rs = stmt.executeQuery()) {
@@ -436,5 +440,26 @@ public class PostgreSQLDatabaseManager implements DatabaseManager {
 
     private static Instant toInstant(Timestamp timestamp) {
         return timestamp != null ? timestamp.toInstant() : Instant.EPOCH;
+    }
+
+    /**
+     * Parses the uuid of a guard row.
+     *
+     * <p>A malformed value must not break the whole anticheat list, such a row
+     * is skipped and reported in the log.</p>
+     *
+     * @param raw the raw uuid
+     * @return the uuid or null when the value is malformed
+     */
+    private UUID parsePlayerUuid(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(raw.trim());
+        } catch (IllegalArgumentException e) {
+            logger.warning("Skipping anticheat row with malformed player uuid: " + raw);
+            return null;
+        }
     }
 }

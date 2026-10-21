@@ -1,6 +1,6 @@
 plugins {
     java
-    id("com.gradleup.shadow") version "9.0.0-beta4"
+    id("com.gradleup.shadow") version "9.2.2"
     checkstyle
 }
 
@@ -9,7 +9,7 @@ version = "1.1.0"
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
+        languageVersion.set(JavaLanguageVersion.of(25))
     }
 }
 
@@ -19,8 +19,10 @@ repositories {
 }
 
 dependencies {
-    // Paper API для 1.19.4+
-    compileOnly("io.papermc.paper:paper-api:1.19.4-R0.1-SNAPSHOT")
+    // Paper API of the server version the plugin runs on (Paper 26.1.2).
+    // Compiling against the exact API keeps removed or renamed Bukkit members
+    // (for example the enchantment constants) from breaking at runtime.
+    compileOnly("io.papermc.paper:paper-api:26.1.2.build.74-stable")
 
     implementation("com.google.code.gson:gson:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
@@ -31,7 +33,8 @@ dependencies {
     testImplementation("net.jqwik:jqwik:1.9.2")
     testImplementation("org.yaml:snakeyaml:2.3")
     testImplementation("org.xerial:sqlite-jdbc:3.47.2.0")
-    testCompileOnly("io.papermc.paper:paper-api:1.19.4-R0.1-SNAPSHOT")
+    testCompileOnly("io.papermc.paper:paper-api:26.1.2.build.74-stable")
+    testRuntimeOnly("io.papermc.paper:paper-api:26.1.2.build.74-stable")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -61,12 +64,12 @@ tasks {
     
     compileJava {
         options.encoding = "UTF-8"
-        options.release.set(21)
+        options.release.set(25)
     }
 
     compileTestJava {
         options.encoding = "UTF-8"
-        options.release.set(21)
+        options.release.set(25)
     }
 }
 

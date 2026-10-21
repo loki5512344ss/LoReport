@@ -50,7 +50,7 @@ public class ReportStatsCommand {
             "%count%", String.valueOf(reportCount)));
         
         String lastOnline = target.isOnline()
-            ? plugin.getConfigManager().getMessage("online-status")
+            ? plugin.getConfigManager().getMessageText("online-status")
             : TimeUtil.formatTimeAgo(target.getLastPlayed());
         player.sendMessage(plugin.getConfigManager().getMessage("stats-last-online",
             "%time%", lastOnline));

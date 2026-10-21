@@ -5,15 +5,17 @@ import dev.loki.lorep.anticheat.AnticheatService;
 import dev.loki.lorep.config.GuiItemConfig;
 import dev.loki.lorep.database.DatabaseManager.FlaggedPlayer;
 import dev.loki.lorep.database.DatabaseManager.ViolationEntry;
+import dev.loki.lorep.gui.item.AnticheatItems;
+import dev.loki.lorep.gui.item.EntrySlots;
 import dev.loki.lorep.util.PaginationUtil;
-import dev.loki.lorep.util.TimeUtil;
+import dev.loki.lorep.util.TextFormat;
+import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.inventory.meta.SkullMeta;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -29,7 +31,16 @@ import java.util.UUID;
 public class AnticheatGui implements ActionInventory {
 
     public static final int INVENTORY_SIZE = 54;
+
+    /** Slot of the single informational item. */
     private static final int INFO_SLOT = 22;
+
+    /** Navigation slots of the list view. */
+    private static final int SLOT_PREV_PAGE = 45;
+    private static final int SLOT_BACK = 46;
+    private static final int SLOT_CLOSE = 47;
+    private static final int SLOT_PAGE_INFO = 49;
+    private static final int SLOT_NEXT_PAGE = 53;
 
     private final LorepPlugin plugin;
     private final int page;
@@ -43,12 +54,13 @@ public class AnticheatGui implements ActionInventory {
         this.page = page;
     }
 
+    /** Opens the list of flagged players. */
     public void open(Player player) {
         detailView = false;
         playerNames.clear();
         slotActions.clear();
 
-        String title = plugin.getConfigManager().getMessage("anticheat-list-title",
+        Component title = plugin.getConfigManager().getMessage("anticheat-list-title",
             "%page%", String.valueOf(page + 1));
         this.inventory = Bukkit.createInventory(this, INVENTORY_SIZE, title);
 
@@ -56,22 +68,25 @@ public class AnticheatGui implements ActionInventory {
         int pageSize = plugin.getConfig().getInt("gui.reports-per-page", 45);
         List<FlaggedPlayer> flagged = service.getFlaggedPlayers(page, pageSize);
         if (flagged == null) {
-            placeInfoItem(plugin.getConfigManager().getMessage("anticheat-unavailable"));
+            placeInfoItem(plugin.getConfigManager().getMessageText("anticheat-unavailable"));
             player.openInventory(inventory);
             return;
         }
 
         int totalPlayers = service.getFlaggedPlayerCount();
-        GuiItemConfig entryConfig = plugin.getConfigManager().getGuiItem("anticheat-entry");
+        GuiItemConfig entryConfig = plugin.getConfigManager().getGuiItem("anticheat-entry", Material.PLAYER_HEAD);
+        List<Integer> slots = EntrySlots.resolve(entryConfig, INVENTORY_SIZE);
+        AnticheatItems items = new AnticheatItems(plugin.getConfigManager());
 
-        for (int i = 0; i < flagged.size(); i++) {
+        for (int i = 0; i < flagged.size() && i < slots.size(); i++) {
             FlaggedPlayer entry = flagged.get(i);
             if (entry.playerUuid() != null) {
                 playerNames.put(entry.playerUuid(), entry.playerName());
             }
-            List<Integer> slots = entryConfig != null ? entryConfig.slots() : List.of();
-            int slot = !slots.isEmpty() && i < slots.size() ? slots.get(i) : i;
-            inventory.setItem(slot, createEntryItem(entry, entryConfig));
+            int reportCount = entry.playerUuid() != null
+                ? plugin.getDatabaseManager().getReportCount(entry.playerUuid()) : 0;
+            int slot = slots.get(i);
+            inventory.setItem(slot, items.entry(entryConfig, entry, reportCount));
             slotActions.put(slot, "ac_detail:" + entry.playerUuid());
         }
 
@@ -79,244 +94,121 @@ public class AnticheatGui implements ActionInventory {
         player.openInventory(inventory);
     }
 
+    /**
+     * Opens the detail view of one flagged player.
+     *
+     * @param player the viewer
+     * @param playerUuid the flagged player
+     * @param playerName the flagged player name
+     */
     public void openDetail(Player player, UUID playerUuid, String playerName) {
         detailView = true;
         slotActions.clear();
 
         String name = playerName != null ? playerName : playerUuid.toString();
-        String title = plugin.getConfigManager().getMessage("anticheat-detail-title", "%player_name%", name);
+        Component title = plugin.getConfigManager().getMessage("anticheat-detail-title", "%player_name%", name);
         this.inventory = Bukkit.createInventory(this, INVENTORY_SIZE, title);
 
         AnticheatService service = plugin.getAnticheatService();
         if (!service.isAvailable()) {
-            placeInfoItem(plugin.getConfigManager().getMessage("anticheat-unavailable"));
+            placeInfoItem(plugin.getConfigManager().getMessageText("anticheat-unavailable"));
             player.openInventory(inventory);
             return;
         }
 
         List<ViolationEntry> violations = service.getRecentViolations(playerUuid);
         if (violations.isEmpty()) {
-            placeInfoItem(plugin.getConfigManager().getMessage("anticheat-detail-empty"));
+            placeInfoItem(plugin.getConfigManager().getMessageText("anticheat-detail-empty"));
         } else {
             placeDetailItem(playerUuid, name, violations);
         }
 
-        placeConfigItem("anticheat-tab", 45, "back");
-        placeConfigItem("close", 47, "close");
-        placeConfigItem("anticheat-reports", 49, "open-reports");
+        placeConfigItem("anticheat-tab", SLOT_BACK, "back");
+        placeConfigItem("close", SLOT_CLOSE, "close");
+        placeConfigItem("anticheat-reports", SLOT_PAGE_INFO, "open-reports");
         player.openInventory(inventory);
     }
 
+    /** Places the navigation buttons of the list view. */
     private void addNavigation(int totalPages, int totalPlayers) {
         if (page > 0) {
-            placeConfigItem("prev-page", 45, "prev_page");
+            placeConfigItem("prev-page", SLOT_PREV_PAGE, "prev_page");
         }
-        placeConfigItem("anticheat-tab", 46, "back");
-        placeConfigItem("close", 47, "close");
+        placeConfigItem("anticheat-tab", SLOT_BACK, "back");
+        placeConfigItem("close", SLOT_CLOSE, "close");
         placePageInfo(totalPages, totalPlayers);
         if (page < totalPages - 1) {
-            placeConfigItem("next-page", 53, "next_page");
+            placeConfigItem("next-page", SLOT_NEXT_PAGE, "next_page");
         }
     }
 
+    /** Places a config driven button, using the config slots when there are any. */
     private void placeConfigItem(String configPath, int defaultSlot, String action) {
         GuiItemConfig config = plugin.getConfigManager().getGuiItem(configPath);
         if (config == null) {
             return;
         }
+        placeItem(config.slots(), defaultSlot, config.createItem(), action);
+    }
 
-        List<Integer> slots = config.slots();
-        ItemStack item = config.createItem();
-        if (slots.isEmpty()) {
-            inventory.setItem(defaultSlot, item);
-            slotActions.put(defaultSlot, action);
-        } else {
-            for (int slot : slots) {
-                inventory.setItem(slot, item);
+    /** Places an item into the configured slots or into the default slot. */
+    private void placeItem(List<Integer> slots, int defaultSlot, ItemStack item, String action) {
+        List<Integer> targets = slots.isEmpty() ? List.of(defaultSlot) : slots;
+        for (int slot : targets) {
+            inventory.setItem(slot, item);
+            if (action != null) {
                 slotActions.put(slot, action);
             }
         }
     }
 
+    /** Places the page counter of the list view. */
     private void placePageInfo(int totalPages, int totalPlayers) {
         GuiItemConfig config = plugin.getConfigManager().getGuiItem("anticheat-page-info");
         if (config == null) {
             return;
         }
 
-        ItemStack item = config.createItem();
-        ItemMeta meta = item.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(replacePagePlaceholders(meta.getDisplayName(), totalPages, totalPlayers));
-            if (meta.getLore() != null) {
-                List<String> lore = new ArrayList<>();
-                for (String line : meta.getLore()) {
-                    lore.add(replacePagePlaceholders(line, totalPages, totalPlayers));
-                }
-                meta.setLore(lore);
-            }
-            item.setItemMeta(meta);
+        String name = replacePagePlaceholders(config.displayName(), totalPages, totalPlayers);
+        List<String> lore = new ArrayList<>();
+        for (String line : config.lore()) {
+            lore.add(replacePagePlaceholders(line, totalPages, totalPlayers));
         }
-
-        List<Integer> slots = config.slots();
-        if (slots.isEmpty()) {
-            inventory.setItem(49, item);
-        } else {
-            for (int slot : slots) {
-                inventory.setItem(slot, item);
-            }
-        }
+        placeItem(config.slots(), SLOT_PAGE_INFO, config.createItem(name, lore), null);
     }
 
+    /** Places the detail item of one flagged player. */
     private void placeDetailItem(UUID playerUuid, String name, List<ViolationEntry> violations) {
-        GuiItemConfig config = plugin.getConfigManager().getGuiItem("anticheat-detail");
+        GuiItemConfig config = plugin.getConfigManager().getGuiItem("anticheat-detail", Material.PLAYER_HEAD);
         int reportCount = plugin.getDatabaseManager().getReportCount(playerUuid);
 
-        ItemStack item;
-        if (config == null) {
-            item = createFallbackHead(playerUuid, name, buildFallbackDetailLore(violations, reportCount));
-        } else {
-            item = config.createItem();
-            if (item.getItemMeta() instanceof SkullMeta skullMeta) {
-                skullMeta.setOwningPlayer(Bukkit.getOfflinePlayer(playerUuid));
-                item.setItemMeta(skullMeta);
-            }
-            ItemMeta meta = item.getItemMeta();
-            if (meta != null) {
-                meta.setDisplayName(replaceStatic(meta.getDisplayName(), name, reportCount));
-                if (meta.getLore() != null) {
-                    meta.setLore(buildDetailLore(meta.getLore(), violations, name, reportCount));
-                }
-                item.setItemMeta(meta);
-            }
-        }
+        AnticheatItems items = new AnticheatItems(plugin.getConfigManager());
+        ItemStack item = items.detail(config, playerUuid, name, violations, reportCount);
 
         List<Integer> slots = config != null ? config.slots() : List.of();
         inventory.setItem(slots.isEmpty() ? INFO_SLOT : slots.get(0), item);
     }
 
-    /** Expands config lore lines containing %check% into one line per violation. */
-    private List<String> buildDetailLore(List<String> configLore, List<ViolationEntry> violations,
-                                         String name, int reportCount) {
-        List<String> lore = new ArrayList<>();
-        for (String line : configLore) {
-            if (line.contains("%check%")) {
-                for (ViolationEntry violation : violations) {
-                    lore.add(replaceViolation(line, violation, name, reportCount));
-                }
-            } else {
-                lore.add(replaceStatic(line, name, reportCount));
-            }
-        }
-        return lore;
-    }
-
-    private ItemStack createEntryItem(FlaggedPlayer entry, GuiItemConfig config) {
-        int reportCount = entry.playerUuid() != null ? plugin.getDatabaseManager().getReportCount(entry.playerUuid()) : 0;
-        if (config == null) {
-            return createFallbackHead(entry.playerUuid(), entry.playerName(), buildFallbackEntryLore(entry, reportCount));
-        }
-
-        ItemStack item = config.createItem();
-        if (item.getItemMeta() instanceof SkullMeta skullMeta && entry.playerUuid() != null) {
-            skullMeta.setOwningPlayer(Bukkit.getOfflinePlayer(entry.playerUuid()));
-            item.setItemMeta(skullMeta);
-        }
-        ItemMeta meta = item.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(replaceEntryPlaceholders(meta.getDisplayName(), entry, reportCount));
-            if (meta.getLore() != null) {
-                List<String> lore = new ArrayList<>();
-                for (String line : meta.getLore()) {
-                    lore.add(replaceEntryPlaceholders(line, entry, reportCount));
-                }
-                meta.setLore(lore);
-            }
-            item.setItemMeta(meta);
-        }
-        return item;
-    }
-
-    private String replaceEntryPlaceholders(String text, FlaggedPlayer entry, int reportCount) {
-        String lastFlag = entry.lastFlagAt() != null ? TimeUtil.formatTimeAgo(entry.lastFlagAt()) : "";
-        return text
-            .replace("%player_name%", entry.playerName() != null ? entry.playerName() : "")
-            .replace("%flag_count%", String.valueOf(entry.flagCount()))
-            .replace("%last_flag%", lastFlag)
-            .replace("%hours%", String.valueOf(plugin.getAnticheatService().getLookbackHours()))
-            .replace("%report_count%", String.valueOf(reportCount));
-    }
-
-    private String replaceViolation(String line, ViolationEntry violation, String name, int reportCount) {
-        String time = violation.createdAt() != null ? TimeUtil.formatTimeAgo(violation.createdAt()) : "";
-        return replaceStatic(line, name, reportCount)
-            .replace("%check%", nullSafe(violation.checkKey()))
-            .replace("%detail%", nullSafe(violation.detail()))
-            .replace("%server%", nullSafe(violation.server()))
-            .replace("%time%", time);
-    }
-
-    private String replaceStatic(String text, String name, int reportCount) {
-        return text
-            .replace("%player_name%", name)
-            .replace("%report_count%", String.valueOf(reportCount))
-            .replace("%hours%", String.valueOf(plugin.getAnticheatService().getLookbackHours()));
-    }
-
+    /** Expands the page placeholders of the page counter. */
     private String replacePagePlaceholders(String text, int totalPages, int totalPlayers) {
+        if (text == null) {
+            return null;
+        }
         return text
             .replace("%page%", String.valueOf(page + 1))
             .replace("%total%", String.valueOf(Math.max(1, totalPages)))
             .replace("%total_players%", String.valueOf(totalPlayers));
     }
 
+    /** Places the informational item used when there is nothing to show. */
     private void placeInfoItem(String text) {
         ItemStack item = new ItemStack(Material.PAPER);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName(text);
+            meta.displayName(TextFormat.component(text));
             item.setItemMeta(meta);
         }
         inventory.setItem(INFO_SLOT, item);
-    }
-
-    private ItemStack createFallbackHead(UUID owner, String name, List<String> lore) {
-        ItemStack head = new ItemStack(Material.PLAYER_HEAD);
-        SkullMeta meta = (SkullMeta) head.getItemMeta();
-        if (meta != null) {
-            if (owner != null) {
-                meta.setOwningPlayer(Bukkit.getOfflinePlayer(owner));
-            }
-            meta.setDisplayName("§c" + name);
-            meta.setLore(lore);
-            head.setItemMeta(meta);
-        }
-        return head;
-    }
-
-    private List<String> buildFallbackEntryLore(FlaggedPlayer entry, int reportCount) {
-        String lastFlag = entry.lastFlagAt() != null ? TimeUtil.formatTimeAgo(entry.lastFlagAt()) : "";
-        List<String> lore = new ArrayList<>();
-        lore.add("§7");
-        lore.add("§eFlags: §c" + entry.flagCount());
-        lore.add("§eLast flag: §f" + lastFlag);
-        lore.add("§eReports: §c" + reportCount);
-        return lore;
-    }
-
-    private List<String> buildFallbackDetailLore(List<ViolationEntry> violations, int reportCount) {
-        List<String> lore = new ArrayList<>();
-        lore.add("§7");
-        lore.add("§eReports: §c" + reportCount);
-        for (ViolationEntry violation : violations) {
-            String time = violation.createdAt() != null ? TimeUtil.formatTimeAgo(violation.createdAt()) : "";
-            lore.add("§8- §f" + nullSafe(violation.checkKey()) + " §7(" + nullSafe(violation.server()) + ", " + time + ")");
-        }
-        return lore;
-    }
-
-    private static String nullSafe(String value) {
-        return value != null ? value : "";
     }
 
     /** @return the name recorded for the player when the list view was rendered. */

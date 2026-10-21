@@ -3,27 +3,41 @@ package dev.loki.lorep.gui;
 import dev.loki.lorep.LorepPlugin;
 import dev.loki.lorep.config.GuiItemConfig;
 import dev.loki.lorep.database.Report;
+import dev.loki.lorep.gui.item.EntrySlots;
+import dev.loki.lorep.gui.item.ReportItems;
 import dev.loki.lorep.util.PaginationUtil;
-import dev.loki.lorep.util.TimeUtil;
+import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
-import org.bukkit.OfflinePlayer;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.inventory.meta.SkullMeta;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Report list GUI: paginated list of reports, the detail view of a single
+ * report and the navigation into the anticheat tab.
+ */
 public class ReportGui implements ActionInventory {
 
     public static final int INVENTORY_SIZE = 54;
+
+    /** Slot of the report item in the detail view. */
+    private static final int INFO_SLOT = 22;
+
+    /** Navigation slots of the list view. */
+    private static final int SLOT_PREV_PAGE = 45;
+    private static final int SLOT_ANTICHEAT_TAB = 46;
+    private static final int SLOT_CLOSE = 47;
+    private static final int SLOT_PAGE_INFO = 49;
+    private static final int SLOT_NEXT_PAGE = 53;
 
     final int page;
     boolean detailView;
@@ -40,12 +54,13 @@ public class ReportGui implements ActionInventory {
         this.currentReport = null;
     }
 
+    /** Opens the list of reports. */
     public void open(Player player) {
         detailView = false;
         currentReport = null;
         slotActions.clear();
 
-        String title = plugin.getConfigManager().getMessage("gui-title",
+        Component title = plugin.getConfigManager().getMessage("gui-title",
             "%page%", String.valueOf(page + 1));
         this.inventory = Bukkit.createInventory(this, INVENTORY_SIZE, title);
 
@@ -54,287 +69,145 @@ public class ReportGui implements ActionInventory {
         int totalReports = plugin.getDatabaseManager().getTotalReportCount();
         int totalPages = PaginationUtil.calculateTotalPages(totalReports, pageSize);
 
-        GuiItemConfig entryConfig = plugin.getConfigManager().getGuiItem("report-entry");
+        GuiItemConfig entryConfig = plugin.getConfigManager().getGuiItem("report-entry", Material.PLAYER_HEAD);
+        List<Integer> slots = EntrySlots.resolve(entryConfig, INVENTORY_SIZE);
+        ReportItems items = new ReportItems(plugin.getConfigManager());
 
-        for (int i = 0; i < reports.size(); i++) {
+        for (int i = 0; i < reports.size() && i < slots.size(); i++) {
             Report report = reports.get(i);
             int targetReportCount = plugin.getDatabaseManager().getReportCount(report.targetUuid());
-
-            ItemStack item;
-            if (entryConfig != null) {
-                item = entryConfig.createItem();
-                if (item.getItemMeta() instanceof SkullMeta skullMeta) {
-                    OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(report.targetUuid());
-                    skullMeta.setOwningPlayer(offlinePlayer);
-                    item.setItemMeta(skullMeta);
-                }
-                ItemMeta meta = item.getItemMeta();
-                if (meta != null) {
-                    meta.setDisplayName(replacePlaceholders(meta.getDisplayName(), report, targetReportCount));
-                    if (meta.getLore() != null) {
-                        List<String> lore = meta.getLore();
-                        List<String> newLore = new ArrayList<>();
-                        for (String line : lore) {
-                            newLore.add(replacePlaceholders(line, report, targetReportCount));
-                        }
-                        meta.setLore(newLore);
-                    }
-                    item.setItemMeta(meta);
-                }
-            } else {
-                item = createFallbackReportItem(report, targetReportCount);
-            }
-
-            List<Integer> slots = entryConfig != null ? entryConfig.slots() : List.of();
-            if (!slots.isEmpty() && i < slots.size()) {
-                int slot = slots.get(i);
-                inventory.setItem(slot, item);
-                slotActions.put(slot, "report_detail:" + report.id());
-            } else {
-                inventory.setItem(i, item);
-                slotActions.put(i, "report_detail:" + report.id());
-            }
+            int slot = slots.get(i);
+            inventory.setItem(slot, items.entry(entryConfig, report, targetReportCount));
+            slotActions.put(slot, "report_detail:" + report.id());
         }
 
         addNavigation(totalReports, totalPages);
         player.openInventory(inventory);
     }
 
+    /**
+     * Opens the detail view of one report.
+     *
+     * @param player the viewer
+     * @param report the report to show
+     */
     public void openDetail(Player player, Report report) {
         detailView = true;
         currentReport = report;
         slotActions.clear();
 
-        String title = plugin.getConfigManager().getMessage("gui-title-detail", "%id%", String.valueOf(report.id()));
+        Component title = plugin.getConfigManager().getMessage("gui-title-detail", "%id%", String.valueOf(report.id()));
         this.inventory = Bukkit.createInventory(this, INVENTORY_SIZE, title);
 
         int targetReportCount = plugin.getDatabaseManager().getReportCount(report.targetUuid());
+        GuiItemConfig entryConfig = plugin.getConfigManager().getGuiItem("report-entry", Material.PLAYER_HEAD);
+        ReportItems items = new ReportItems(plugin.getConfigManager());
+        inventory.setItem(INFO_SLOT, items.detail(entryConfig, report, targetReportCount));
 
-        GuiItemConfig entryConfig = plugin.getConfigManager().getGuiItem("report-entry");
-        ItemStack item;
-        if (entryConfig != null) {
-            item = entryConfig.createItem();
-            if (item.getItemMeta() instanceof SkullMeta skullMeta) {
-                skullMeta.setOwningPlayer(Bukkit.getOfflinePlayer(report.targetUuid()));
-                item.setItemMeta(skullMeta);
-            }
-            ItemMeta meta = item.getItemMeta();
-            if (meta != null) {
-                meta.setDisplayName(replacePlaceholders(meta.getDisplayName(), report, targetReportCount));
-                if (meta.getLore() != null) {
-                    List<String> lore = meta.getLore();
-                    List<String> newLore = new ArrayList<>();
-                    for (String line : lore) {
-                        newLore.add(replacePlaceholders(line, report, targetReportCount));
-                    }
-                    meta.setLore(newLore);
-                }
-                item.setItemMeta(meta);
-            }
-        } else {
-            item = createFallbackReportItem(report, targetReportCount);
-        }
-        inventory.setItem(22, item);
-
-        placeDetailButton("teleport", "teleport");
+        placeConfigItem("teleport", "teleport", 20);
         if (report.imageUrl() != null && !report.imageUrl().isEmpty()) {
-            placeDetailButton("screenshot", "screenshot");
+            placeConfigItem("screenshot", "screenshot", 24);
         }
 
         String currentStatus = report.status() != null ? report.status() : "PENDING";
-        placeStatusButton("status-pending", "status_set:PENDING", "PENDING".equals(currentStatus));
-        placeStatusButton("status-reviewing", "status_set:REVIEWING", "REVIEWING".equals(currentStatus));
-        placeStatusButton("status-resolved", "status_set:RESOLVED", "RESOLVED".equals(currentStatus));
-        placeStatusButton("status-dismissed", "status_set:DISMISSED", "DISMISSED".equals(currentStatus));
+        placeStatusButton("status-pending", "status_set:PENDING", "PENDING".equals(currentStatus), 29);
+        placeStatusButton("status-reviewing", "status_set:REVIEWING", "REVIEWING".equals(currentStatus), 30);
+        placeStatusButton("status-resolved", "status_set:RESOLVED", "RESOLVED".equals(currentStatus), 31);
+        placeStatusButton("status-dismissed", "status_set:DISMISSED", "DISMISSED".equals(currentStatus), 32);
 
-        GuiItemConfig closeConfig = plugin.getConfigManager().getGuiItem("close");
-        if (closeConfig != null) {
-            List<Integer> slots = closeConfig.slots();
-            ItemStack closeItem = closeConfig.createItem();
-            if (slots.isEmpty()) {
-                inventory.setItem(49, closeItem);
-                slotActions.put(49, "close");
-            } else {
-                for (int slot : slots) {
-                    inventory.setItem(slot, closeItem);
-                    slotActions.put(slot, "close");
-                }
-            }
-        }
-
+        placeConfigItem("close", "close", SLOT_CLOSE);
         player.openInventory(inventory);
     }
 
-    private void placeDetailButton(String configPath, String action) {
+    /**
+     * Places a config driven button.
+     *
+     * @param configPath the item path inside {@code gui.items}
+     * @param action the click action of the button
+     * @param defaultSlot the slot used when the config declares none
+     */
+    private void placeConfigItem(String configPath, String action, int defaultSlot) {
         GuiItemConfig config = plugin.getConfigManager().getGuiItem(configPath);
         if (config == null) {
             return;
         }
-
-        List<Integer> slots = config.slots();
-        ItemStack button = config.createItem();
-        if (slots.isEmpty()) {
-            int slot = switch (action) {
-                case "teleport" -> 20;
-                case "screenshot" -> 24;
-                default -> 22;
-            };
-            inventory.setItem(slot, button);
-            slotActions.put(slot, action);
-        } else {
-            for (int slot : slots) {
-                inventory.setItem(slot, button);
-                slotActions.put(slot, action);
-            }
-        }
+        placeItem(config.slots(), defaultSlot, config.createItem(), action);
     }
 
-    private void placeStatusButton(String configPath, String action, boolean active) {
+    /**
+     * Places a status button of the detail view.
+     *
+     * @param configPath the item path inside {@code gui.items}
+     * @param action the click action of the button
+     * @param active whether the status is the current one
+     * @param defaultSlot the slot used when the config declares none
+     */
+    private void placeStatusButton(String configPath, String action, boolean active, int defaultSlot) {
         GuiItemConfig config = plugin.getConfigManager().getGuiItem(configPath);
         if (config == null) {
             return;
         }
 
-        List<Integer> slots = config.slots();
-        ItemStack button = config.createItem();
+        ItemStack item = config.createItem();
         if (active) {
-            button.addUnsafeEnchantment(Enchantment.ARROW_DAMAGE, 1);
-            ItemMeta meta = button.getItemMeta();
-            if (meta != null) {
-                meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
-                button.setItemMeta(meta);
-            }
-        }
-        if (slots.isEmpty()) {
-            int slot = switch (action) {
-                case "status_set:PENDING" -> 29;
-                case "status_set:REVIEWING" -> 30;
-                case "status_set:RESOLVED" -> 31;
-                case "status_set:DISMISSED" -> 32;
-                default -> 29;
-            };
-            inventory.setItem(slot, button);
-            slotActions.put(slot, action);
-        } else {
-            for (int slot : slots) {
-                inventory.setItem(slot, button);
-                slotActions.put(slot, action);
-            }
-        }
-    }
-
-    private void addNavigation(int totalReports, int totalPages) {
-        if (page > 0) {
-            GuiItemConfig prevConfig = plugin.getConfigManager().getGuiItem("prev-page");
-            if (prevConfig != null) {
-                List<Integer> slots = prevConfig.slots();
-                ItemStack item = prevConfig.createItem();
-                if (slots.isEmpty()) {
-                    inventory.setItem(45, item);
-                    slotActions.put(45, "prev_page");
-                } else {
-                    for (int slot : slots) {
-                        inventory.setItem(slot, item);
-                        slotActions.put(slot, "prev_page");
-                    }
-                }
-            }
-        }
-
-        GuiItemConfig pageInfoConfig = plugin.getConfigManager().getGuiItem("page-info");
-        if (pageInfoConfig != null) {
-            List<Integer> slots = pageInfoConfig.slots();
-            ItemStack item = pageInfoConfig.createItem();
+            item.addUnsafeEnchantment(Enchantment.POWER, 1);
             ItemMeta meta = item.getItemMeta();
             if (meta != null) {
-                meta.setDisplayName(meta.getDisplayName()
-                    .replace("%page%", String.valueOf(page + 1))
-                    .replace("%total%", String.valueOf(Math.max(1, totalPages)))
-                    .replace("%total_reports%", String.valueOf(totalReports)));
-                if (meta.getLore() != null) {
-                    List<String> lore = meta.getLore();
-                    List<String> newLore = new ArrayList<>();
-                    for (String line : lore) {
-                        newLore.add(line
-                            .replace("%page%", String.valueOf(page + 1))
-                            .replace("%total%", String.valueOf(Math.max(1, totalPages)))
-                            .replace("%total_reports%", String.valueOf(totalReports)));
-                    }
-                    meta.setLore(newLore);
-                }
+                meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
                 item.setItemMeta(meta);
             }
-            if (slots.isEmpty()) {
-                inventory.setItem(49, item);
-            } else {
-                for (int slot : slots) {
-                    inventory.setItem(slot, item);
-                }
+        }
+        placeItem(config.slots(), defaultSlot, item, action);
+    }
+
+    /** Places an item into the configured slots or into the default slot. */
+    private void placeItem(List<Integer> slots, int defaultSlot, ItemStack item, String action) {
+        List<Integer> targets = slots.isEmpty() ? List.of(defaultSlot) : slots;
+        for (int slot : targets) {
+            inventory.setItem(slot, item);
+            if (action != null) {
+                slotActions.put(slot, action);
             }
         }
+    }
 
+    /** Places the navigation buttons of the list view. */
+    private void addNavigation(int totalReports, int totalPages) {
+        if (page > 0) {
+            placeConfigItem("prev-page", "prev_page", SLOT_PREV_PAGE);
+        }
+        placeConfigItem("anticheat-tab", "anticheat_open", SLOT_ANTICHEAT_TAB);
+        placeConfigItem("close", "close", SLOT_CLOSE);
+        placePageInfo(totalReports, totalPages);
         if (page < totalPages - 1) {
-            GuiItemConfig nextConfig = plugin.getConfigManager().getGuiItem("next-page");
-            if (nextConfig != null) {
-                List<Integer> slots = nextConfig.slots();
-                ItemStack item = nextConfig.createItem();
-                if (slots.isEmpty()) {
-                    inventory.setItem(53, item);
-                    slotActions.put(53, "next_page");
-                } else {
-                    for (int slot : slots) {
-                        inventory.setItem(slot, item);
-                        slotActions.put(slot, "next_page");
-                    }
-                }
-            }
-        }
-
-        GuiItemConfig closeConfig = plugin.getConfigManager().getGuiItem("close");
-        if (closeConfig != null) {
-            List<Integer> slots = closeConfig.slots();
-            ItemStack item = closeConfig.createItem();
-            if (slots.isEmpty()) {
-                inventory.setItem(47, item);
-                slotActions.put(47, "close");
-            } else {
-                for (int slot : slots) {
-                    inventory.setItem(slot, item);
-                    slotActions.put(slot, "close");
-                }
-            }
+            placeConfigItem("next-page", "next_page", SLOT_NEXT_PAGE);
         }
     }
 
-    private String replacePlaceholders(String text, Report report, int reportCount) {
-        String statusDisplay = plugin.getConfigManager().getMessage("status-" + report.status().toLowerCase());
+    /** Places the page counter of the list view. */
+    private void placePageInfo(int totalReports, int totalPages) {
+        GuiItemConfig config = plugin.getConfigManager().getGuiItem("page-info");
+        if (config == null) {
+            return;
+        }
+
+        String name = replacePagePlaceholders(config.displayName(), totalReports, totalPages);
+        List<String> lore = new ArrayList<>();
+        for (String line : config.lore()) {
+            lore.add(replacePagePlaceholders(line, totalReports, totalPages));
+        }
+        placeItem(config.slots(), SLOT_PAGE_INFO, config.createItem(name, lore), null);
+    }
+
+    /** Expands the page placeholders of the page counter. */
+    private String replacePagePlaceholders(String text, int totalReports, int totalPages) {
+        if (text == null) {
+            return null;
+        }
         return text
-            .replace("%target_name%", report.targetName() != null ? report.targetName() : "")
-            .replace("%reporter_name%", report.reporterName() != null ? report.reporterName() : "")
-            .replace("%reason%", report.reason() != null ? report.reason() : "")
-            .replace("%time%", TimeUtil.formatTimeAgo(report.createdAt()))
-            .replace("%status%", statusDisplay)
-            .replace("%server%", report.serverName() != null ? report.serverName() : Report.UNKNOWN_SERVER)
-            .replace("%report_count%", String.valueOf(reportCount));
-    }
-
-    private ItemStack createFallbackReportItem(Report report, int totalReports) {
-        ItemStack head = new ItemStack(Material.PLAYER_HEAD);
-        SkullMeta meta = (SkullMeta) head.getItemMeta();
-        if (meta != null) {
-            meta.setOwningPlayer(Bukkit.getOfflinePlayer(report.targetUuid()));
-            meta.setDisplayName("§c" + report.targetName());
-            List<String> lore = new ArrayList<>();
-            lore.add("§7");
-            lore.add("§eBy: §f" + report.reporterName());
-            lore.add("§eReason: §f" + report.reason());
-            lore.add("§eTime: §f" + TimeUtil.formatTimeAgo(report.createdAt()));
-            lore.add("§7");
-            lore.add("§eReports: §c" + totalReports);
-            meta.setLore(lore);
-            head.setItemMeta(meta);
-        }
-        return head;
+            .replace("%page%", String.valueOf(page + 1))
+            .replace("%total%", String.valueOf(Math.max(1, totalPages)))
+            .replace("%total_reports%", String.valueOf(totalReports));
     }
 
     public int getPage() {

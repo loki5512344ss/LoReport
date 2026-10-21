@@ -109,7 +109,7 @@ public class AnticheatService {
     }
 
     private String renderSummary(String checks, int lookbackHours) {
-        return config.getMessage("anticheat-summary", "%checks%", checks, "%hours%", String.valueOf(lookbackHours));
+        return config.getMessageText("anticheat-summary", "%checks%", checks, "%hours%", String.valueOf(lookbackHours));
     }
 
     /**

@@ -46,6 +46,9 @@ gui:
   # GUI item definitions — customize materials, textures, and positions
   # Set custom-model-data to your resource pack model ID (-1 to disable)
   # Use slots to make an item span multiple slots (empty = default position)
+  # The bottom row (slots 45-53) is reserved for the navigation buttons.
+  # The entries of a list fill the rows above it when no slots are configured.
+  # Material names accept both spellings: PLAYER_HEAD and minecraft:player_head
   items:
     prev-page:
       material: ARROW
@@ -223,3 +226,18 @@ messages:
   status-reviewing: "&eReviewing"
   status-resolved: "&aResolved"
   status-dismissed: "&7Dismissed"
+  # Fallback entries of the GUI lists, used when gui.items.<name> is missing
+  report-entry-name: "&c%target_name%"
+  report-entry-reporter: "&eBy: &f%reporter_name%"
+  report-entry-reason: "&eReason: &f%reason%"
+  report-entry-time: "&eTime: &f%time%"
+  report-entry-status: "&eStatus: &f%status%"
+  report-entry-server: "&eServer: &f%server%"
+  report-entry-reports: "&eReports: &c%report_count%"
+  anticheat-entry-name: "&c%player_name%"
+  anticheat-entry-flags: "&eFlags (%hours%h): &c%flag_count%"
+  anticheat-entry-last-flag: "&eLast flag: &f%last_flag%"
+  anticheat-entry-reports: "&eReports: &c%report_count%"
+  anticheat-detail-name: "&c%player_name%"
+  anticheat-detail-reports: "&eReports: &c%report_count%"
+  anticheat-detail-flag: "&8- &f%check% &7(%server%, %time%) &8%detail%"
